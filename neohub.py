@@ -36,10 +36,14 @@ class Neostat(object):
     Mutates, such as set_frost_on, upon success, poke an updated value into
     self.data, rather than do another INFO/ENGINEERS_DATA query to the hub.
     """
-    def __init__(self, hub, data):
+    def __init__(self, hub, id, name):
         self.hub = hub
-        self.name = data["device"]
-        self.data = data
+        self.id = id
+        self.name = name
+        self.data = {"id": id, "device": name}
+
+    def update(self, data):
+        self.data.update(data)
 
     def current_temperature(self):
         """Gets current temperature as measured at the thermostat"""
@@ -133,6 +137,7 @@ class Neohub(object):
         self._devices = {}
         self._connected = False
         self.initial_zone_load()
+        self.read_dcb()
         self.update()
 
     def ensure_connected(self):
@@ -150,7 +155,16 @@ class Neohub(object):
             self._connected = False
             self._sock.close()
 
+    def read_dcb(self):
+        """Reads neohub settings"""
+        self._dcb = self.call({"READ_DCB": 100})
+    
+    def corf(self):
+        """Returns C or F, for celcius/farenheit"""
+        return self._dcb["CORF"]
+
     def initial_zone_load(self):
+        self._devices = {}
         zones = self.get_zones()
         for name in zones:
             self._devices[name] = {"id": zones[name]}
@@ -388,6 +402,15 @@ class Neohub(object):
         q = {"GET_ZONES": 0}
         return self.call(q)
 
+    # REMOVE_ZONE
+    # {"REMOVE_ZONE":<zone>}
+    # Possible results
+    # {"result":"zone removed"}
+    # {"error":"Invalid argument to REMOVE_ZONE, should be a valid device or array of valid devices"}
+    def remove_zone(self, device):
+        q = {"REMOVE_ZONE": device}
+        return self.call(q, expecting={"result": "zone removed"})
+
     # Merge together INFO and ENGINEERS_DATA for each device
     # and augment with some derived field names, in lower-case
     # since various things are inconsistently named
@@ -402,8 +425,7 @@ class Neohub(object):
             # frost is called STANDBY i think :S
             merged["frost_enabled"] = merged["STANDBY"]
             self._devices[name].update(merged)
-        #logging.info("DEVICES: %s", repr(devices))
-        return devices
+        return self._devices
 
     def devices(self):
         return self._devices
@@ -428,6 +450,12 @@ def main(neo, cmd, args):
         print(json.dumps(neo.update()[args[0]], sort_keys=True, indent=2))
         return 0
 
+    if cmd == "rename_zone":
+        return ok(neo.zone_title(args[0], args[1]))
+
+    if cmd == "remove_zone":
+        return ok(neo.remove_zone(args[0]))
+
     if cmd == "frost_on":
         return ok(neo.frost_on(args[0]))
 
@@ -436,12 +464,12 @@ def main(neo, cmd, args):
 
     if cmd == "list":
         neo.update()
-        for dev in neo.devices().keys():
+        for dev in sorted(neo.devices().keys()):
             d = neo.devices()[dev]
             frosty = "not frosted"
             if d["frost_enabled"]:
                 frosty = "frosted"
-            print("%s\tcurrent_temp:%s current_set_temp:%s frost_temp:%s %s" % (dev, d["CURRENT_TEMPERATURE"], d["CURRENT_SET_TEMPERATURE"], d["FROST TEMPERATURE"], frosty))
+            print("%22s\tcurrent_temp:%s current_set_temp:%s frost_temp:%s %s" % (dev, d["CURRENT_TEMPERATURE"], d["CURRENT_SET_TEMPERATURE"], d["FROST TEMPERATURE"], frosty))
         return 0
 
     return 1
