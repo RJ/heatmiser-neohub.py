@@ -20,7 +20,39 @@ def json_compare(j1, j2):
     return ordered(j1) == ordered(j2)
 
 
-class Neostat(object):
+class Neodevice(object):
+    """One neodevice superclass"""
+    def __init__(self, hub, id, name):
+        self.neotype = "UNKNOWN"
+        self.hub = hub
+        self.id = id
+        self.name = name
+        self.data = {"id": id, "device": name}
+
+    def update(self, data):
+        self.data.update(data)
+
+    def __repr__(self):
+        return "<NeoDevice unknown>"
+
+
+class Neoplug(Neodevice):
+    """Represents one NeoPlug, which can be switched on/off"""
+    def __init__(self, hub, id, name):
+        Neodevice.__init__(self, hub, id, name)
+        self.neotype = "NeoPlug"
+
+    def __repr__(self):
+        st = "OFF"
+        if self.is_on():
+            st = "ON"
+        return "<NeoPlug id=%-2d status=%-3s name='%s' >" % (self.id, st, self.name)
+
+    def is_on(self):
+        return self.data["TIME_CLOCK_OVERIDE_BIT"] and self.data["TIMER"]
+
+
+class Neostat(Neodevice):
     """Represents one Neostat thermostat.
 
     Method naming convention:
@@ -29,21 +61,15 @@ class Neostat(object):
     .set_<feature> - set feature value
     .<feature>     - get current value
  
-    Notes:
-    
-    self.data is the merged dict from INFO and ENGINEERS_DATA for this device
-    
     Mutates, such as set_frost_on, upon success, poke an updated value into
     self.data, rather than do another INFO/ENGINEERS_DATA query to the hub.
     """
     def __init__(self, hub, id, name):
-        self.hub = hub
-        self.id = id
-        self.name = name
-        self.data = {"id": id, "device": name}
+        Neodevice.__init__(self, hub, id, name)
+        self.neotype = "NeoStat"
 
-    def update(self, data):
-        self.data.update(data)
+    def __repr__(self):
+        return "<NeoStat id=%-2d temp=%0.1f name='%s'>" % (self.id, self.current_temperature(), self.name)
 
     def current_temperature(self):
         """Gets current temperature as measured at the thermostat"""
@@ -101,8 +127,6 @@ class Neostat(object):
         period."""
         return self.data["HOLD_TEMPERATURE"]
 
-
-
     def set_temperature(self):
         """Gets the so-called SET_TEMPERATURE
 
@@ -135,10 +159,18 @@ class Neohub(object):
         self._port = port
         self._sock = None
         self._devices = {}
+        self._neostats = {}
+        self._neoplugs = {}
         self._connected = False
         self.initial_zone_load()
         self.read_dcb()
         self.update()
+
+    def neostats(self):
+        return self._neostats
+
+    def neoplugs(self):
+        return self._neoplugs
 
     def ensure_connected(self):
         if self._connected:
@@ -420,11 +452,26 @@ class Neohub(object):
         resp2 = self.call({"ENGINEERS_DATA": "0"}) 
         for dev in resp["devices"]:
             name = dev["device"]
+            id = self._devices[name]["id"]
             merged = dev.copy()
             merged.update(resp2[name])
-            # frost is called STANDBY i think :S
-            merged["frost_enabled"] = merged["STANDBY"]
+            merged["id"] = id
             self._devices[name].update(merged)
+            # device type 1 = neostat
+            #             6 = neoplug
+            if merged["DEVICE_TYPE"] == 1:
+                if name not in self._neostats:
+                    self._neostats[name] = Neostat(self, id, name)
+                self._neostats[name].update(merged)
+            elif merged["DEVICE_TYPE"] == 6:
+                if name not in self._neoplugs:
+                    self._neoplugs[name] = Neoplug(self, id, name)
+                self._neoplugs[name].update(merged)
+            else:
+                logging.warn("Unimplemented NeoSomething device_type! "
+                             "Only support neostat(1) and neoplug(6) at the mo")
+                pass
+
         return self._devices
 
     def devices(self):
@@ -467,9 +514,21 @@ def main(neo, cmd, args):
         for dev in sorted(neo.devices().keys()):
             d = neo.devices()[dev]
             frosty = "not frosted"
-            if d["frost_enabled"]:
+            if d["STANDBY"]:
                 frosty = "frosted"
             print("%22s\tcurrent_temp:%s current_set_temp:%s frost_temp:%s %s" % (dev, d["CURRENT_TEMPERATURE"], d["CURRENT_SET_TEMPERATURE"], d["FROST TEMPERATURE"], frosty))
+        return 0
+
+    if cmd == "list-stats":
+        for name in neo.neostats():
+            ns = neo.neostats()[name]
+            print(repr(ns))
+        return 0
+
+    if cmd == "list-plugs":
+        for name in neo.neoplugs():
+            ns = neo.neoplugs()[name]
+            print(repr(ns))
         return 0
 
     return 1
