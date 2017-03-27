@@ -1,169 +1,24 @@
-#!/usr/bin/env python3
-import sys
-import argparse
 import json
-import logging
 import socket
-
-logging.basicConfig(level=logging.DEBUG)
-
-def ordered(obj):
-    if isinstance(obj, dict):
-        return sorted((k, ordered(v)) for k, v in obj.items())
-    if isinstance(obj, list):
-        return sorted(ordered(x) for x in obj)
-    else:
-        return obj
+import logging
+import time
+from .neostat import NeoStat
+from .neoplug import NeoPlug
 
 
-def json_compare(j1, j2):
-    return ordered(j1) == ordered(j2)
-
-
-class Neodevice(object):
-    """One neodevice superclass"""
-    def __init__(self, hub, id, name):
-        self.neotype = "UNKNOWN"
-        self.hub = hub
-        self.id = id
-        self.name = name
-        self.data = {"id": id, "device": name}
-
-    def update(self, data):
-        self.data.update(data)
-
-    def __repr__(self):
-        return "<NeoDevice unknown>"
-
-
-class Neoplug(Neodevice):
-    """Represents one NeoPlug, which can be switched on/off"""
-    def __init__(self, hub, id, name):
-        Neodevice.__init__(self, hub, id, name)
-        self.neotype = "NeoPlug"
-
-    def __repr__(self):
-        st = "OFF"
-        if self.is_on():
-            st = "ON"
-        return "<NeoPlug id=%-2d status=%-3s name='%s' >" % (self.id, st, self.name)
-
-    def is_on(self):
-        return self.data["TIME_CLOCK_OVERIDE_BIT"] and self.data["TIMER"]
-
-
-class Neostat(Neodevice):
-    """Represents one Neostat thermostat.
-
-    Method naming convention:
-
-    .is_<feature>  - boolean to check if feature is enabled
-    .set_<feature> - set feature value
-    .<feature>     - get current value
- 
-    Mutates, such as set_frost_on, upon success, poke an updated value into
-    self.data, rather than do another INFO/ENGINEERS_DATA query to the hub.
-    """
-    def __init__(self, hub, id, name):
-        Neodevice.__init__(self, hub, id, name)
-        self.neotype = "NeoStat"
-
-    def __repr__(self):
-        return "<NeoStat id=%-2d temp=%0.1f name='%s'>" % (self.id, self.current_temperature(), self.name)
-
-    def current_temperature(self):
-        """Gets current temperature as measured at the thermostat"""
-        return float(self.data["CURRENT_TEMPERATURE"])
-
-    def currently_heating(self):
-        """Is the thermostat currently heating the room"""
-        return self.data["HEATING"]
-
-    def is_frosted(self):
-        """is the stat is currently in frost mode"""
-        return self.data["STANDBY"]
-
-    def frost_temperature(self):
-        """returns the frost temperature, regardless of if frost mode is on"""
-        return self.data["FROST TEMPERATURE"]
-
-    def set_frost_temperature(self, temp):
-        """sets the frost (minimum allowable) temperature"""
-        if self.hub.set_frost(self.name, temp):
-            self.data["FROST TEMPERATURE"] = temp
-            return True
-        else:
-            return False
-
-    def set_frost_on(self):
-        """enable frost mode"""
-        if self.hub.frost_on(self.name):
-            self.data["STANDBY"] = True
-            return True
-        else:
-            return False
-
-    def set_frost_off(self):
-        """disable frost mode"""
-        if self.hub.frost_off(self.name):
-            self.data["STANDBY"] = False
-            return True
-        else:
-            return False
-
-    def is_temperature_held(self):
-        """Returns whether a hold temperature is in effect
-        
-        The temperature hold function allows you to manually override the
-        current operating program and set a different temperature for a desired
-        period."""
-        return self.data["TEMP_HOLD"]
-
-    def hold_temperature(self):
-        """Gets the current hold temperature
-        
-        The temperature hold function allows you to manually override the
-        current operating program and set a different temperature for a desired
-        period."""
-        return self.data["HOLD_TEMPERATURE"]
-
-    def set_temperature(self):
-        """Gets the so-called SET_TEMPERATURE
-
-        This temperature is maintained only until the next programmed comfort
-        level. At this time, the thermostat will revert back to the programmed
-        levels
-        """
-        return float(self.data["CURRENT_SET_TEMPERATURE"])
-
-    def set_set_temperature(self, temp):
-        """Sets the so-called SET_TEMPERATURE
-
-        This temperature is maintained only until the next programmed comfort
-        level. At this time, the thermostat will revert back to the programmed
-        levels
-        """
-        if self.hub.set_temp(self.name, temp):
-            self.data["CURRENT_SET_TEMPERATURE"] = temp
-            return True
-    
-
-
-
-
-
-class Neohub(object):
+class NeoHub(object):
 
     def __init__(self, host, port):
         self._host = host
         self._port = port
         self._sock = None
-        self._devices = {}
+        self.devices = {}
         self._neostats = {}
         self._neoplugs = {}
         self._connected = False
         self.initial_zone_load()
         self.read_dcb()
+        self._last_update_time = 0
         self.update()
 
     def neostats(self):
@@ -196,10 +51,10 @@ class Neohub(object):
         return self._dcb["CORF"]
 
     def initial_zone_load(self):
-        self._devices = {}
+        self.devices = {}
         zones = self.get_zones()
         for name in zones:
-            self._devices[name] = {"id": zones[name]}
+            self.devices[name] = {"id": zones[name]}
 
     def call(self, j, expecting=None):
         self.ensure_connected()
@@ -443,106 +298,94 @@ class Neohub(object):
         q = {"REMOVE_ZONE": device}
         return self.call(q, expecting={"result": "zone removed"})
 
+    # Note1
+    # Neoplug is seen primarily as a timeclock by the system with a few additional commands for manual
+    # switching so use timeclock commands for programming
+    # Note2
+    # To override the neoplug for a period of time use TIMER_HOLD_ON and TIMER HOLD OFF
+    # To turn the output on or off use TIMER_ON or TIMER_OFF
+
+    # MANUAL_ON
+    # {"MANUAL_ON":<devices>}
+    # Turns on NeoPlug manual mode. This is the opposite of automatic and
+    # disables the time clock,effectively turning the neoplug into a
+    # switch.
+    # Possible results
+    # {"result":"manual on"}
+    # {"error":"Could not complete manual on"}
+    # {"error":"Invalid argument to MANUAL_ON, should be a valid device or
+    # array of valid devices"}
+    # MANUAL_OFF
+    # {"MANUAL_OFF":<devices>}
+    # Turns off NeoPlug manual mode.
+    # Possible results
+    # {"result":"manual off"}
+    # {"error":"Could not complete manual off"}
+    # {"error":"Invalid argument to MANUAL_OFF, should be a valid device
+    # or array of valid devices"}
+    def switch_plug_on(self, device):
+        q = {"TIMER_ON": device}
+        return self.call(q, expecting={"result": "time clock overide on"})
+
+    def switch_plug_off(self, device):
+        q = {"TIMER_OFF": device}
+        return self.call(q, expecting={"result": "timers off"})
+
     # Merge together INFO and ENGINEERS_DATA for each device
     # and augment with some derived field names, in lower-case
     # since various things are inconsistently named
-    def update(self):
+    def update(self, force_update=False):
+        if (self._last_update_time is None or force_update or (time.time() - self._last_update_time) >= 15):
+            self._last_update_time = time.time()
+            logging.warn("actual neo")
+            return self.actual_update()
+        else:
+            logging.warn("cached neo")
+            return self.devices
+
+    def actual_update(self):
         self.ensure_connected()
         resp = self.call({"INFO": "0"})
         resp2 = self.call({"ENGINEERS_DATA": "0"}) 
         for dev in resp["devices"]:
             name = dev["device"]
-            id = self._devices[name]["id"]
             merged = dev.copy()
             merged.update(resp2[name])
-            merged["id"] = id
-            self._devices[name].update(merged)
+            self.devices[name].update(merged)
+
             # device type 1 = neostat
             #             6 = neoplug
-            if merged["DEVICE_TYPE"] == 1:
+            if merged["DEVICE_TYPE"] == 0:
+                # offline therm?
+                pass
+            elif merged["DEVICE_TYPE"] == 1:
                 if name not in self._neostats:
-                    self._neostats[name] = Neostat(self, id, name)
-                self._neostats[name].update(merged)
+                    self._neostats[name] = NeoStat(self, name)
             elif merged["DEVICE_TYPE"] == 6:
                 if name not in self._neoplugs:
-                    self._neoplugs[name] = Neoplug(self, id, name)
-                self._neoplugs[name].update(merged)
+                    self._neoplugs[name] = NeoPlug(self, name)
             else:
-                logging.warn("Unimplemented NeoSomething device_type! "
-                             "Only support neostat(1) and neoplug(6) at the mo")
+                logging.warn("Unimplemented NeoSomething device_type(%s)! "
+                             "Only support neostat(1) and neoplug(6) at the mo" % (merged["DEVICE_TYPE"]))
+                print(repr(merged))
                 pass
 
-        return self._devices
+        return self.devices
 
     def devices(self):
-        return self._devices
+        return self.devices
 
     def device(self, name):
-        return self._devices[name]
+        return self.devices[name]
 
 
-def ok(b):
-    if b:
-        return 0
+def json_compare(j1, j2):
+    return ordered(j1) == ordered(j2)
+
+def ordered(obj):
+    if isinstance(obj, dict):
+        return sorted((k, ordered(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return sorted(ordered(x) for x in obj)
     else:
-        return 1
-
-
-def main(neo, cmd, args):
-    if cmd == "call":
-        print(json.dumps(neo.call(json.loads(args[0])), sort_keys=True, indent=2))
-        return 0
-
-    if cmd == "stat":
-        print(json.dumps(neo.update()[args[0]], sort_keys=True, indent=2))
-        return 0
-
-    if cmd == "rename_zone":
-        return ok(neo.zone_title(args[0], args[1]))
-
-    if cmd == "remove_zone":
-        return ok(neo.remove_zone(args[0]))
-
-    if cmd == "frost_on":
-        return ok(neo.frost_on(args[0]))
-
-    if cmd == "frost_off":
-        return ok(neo.frost_off(args[0]))
-
-    if cmd == "list":
-        neo.update()
-        for dev in sorted(neo.devices().keys()):
-            d = neo.devices()[dev]
-            frosty = "not frosted"
-            if d["STANDBY"]:
-                frosty = "frosted"
-            print("%22s\tcurrent_temp:%s current_set_temp:%s frost_temp:%s %s" % (dev, d["CURRENT_TEMPERATURE"], d["CURRENT_SET_TEMPERATURE"], d["FROST TEMPERATURE"], frosty))
-        return 0
-
-    if cmd == "list-stats":
-        for name in neo.neostats():
-            ns = neo.neostats()[name]
-            print(repr(ns))
-        return 0
-
-    if cmd == "list-plugs":
-        for name in neo.neoplugs():
-            ns = neo.neoplugs()[name]
-            print(repr(ns))
-        return 0
-
-    return 1
-
-
-
-if __name__ == '__main__':
-    neo = Neohub("10.0.0.197", 4242)
-    # print(neo.set_temperature("Kitchen", 22))
-    cmd = sys.argv[1]
-    args = sys.argv[2:]
-    sys.exit(main(neo, cmd, args))
-
-
-
-    
-
+        return obj
