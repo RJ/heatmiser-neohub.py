@@ -20,6 +20,7 @@ class NeoHub(object):
         self._connected = False
         self._last_update_time = 0
         self._dirty = False
+        self._update_in_progress = False
 
     async def async_setup(self):
         await self.connect_to_hub()
@@ -319,6 +320,9 @@ class NeoHub(object):
 
     # Guard / memoize / debounce access to actual_update()
     async def update(self, force_update=False):
+        if self._update_in_progress:
+            return self.devices
+
         if (self._dirty or self._last_update_time is None or force_update or (time.time() - self._last_update_time) >= self._cache_duration):
             self._last_update_time = time.time()
             logging.debug("Querying NeoHub for all device data")
@@ -332,6 +336,7 @@ class NeoHub(object):
     # and augment with some derived field names, in lower-case
     # since various things are inconsistently named
     async def actual_update(self):
+        self._update_in_progress = True
         resp = await self.call({"INFO": "0"})
         resp2 = await self.call({"ENGINEERS_DATA": "0"}) 
         for dev in resp["devices"]:
@@ -357,6 +362,7 @@ class NeoHub(object):
                 print(repr(merged))
                 pass
 
+        self._update_in_progress = False
         return self.devices
 
     def devices(self):
