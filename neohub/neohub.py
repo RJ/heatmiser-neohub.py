@@ -1,3 +1,4 @@
+import asyncio
 import json
 import socket
 import logging
@@ -16,85 +17,66 @@ class NeoHub(object):
         self._neostats = {}
         self._neoplugs = {}
         self._connected = False
-        self.initial_zone_load()
-        self.read_dcb()
         self._last_update_time = 0
-        self.update()
+
+    async def async_setup(self):
+        await self.connect_to_hub()
+        await self.initial_zone_load()
+        await self.read_dcb()
+        await self.update()
+
+    async def connect_to_hub(self):
+        self._reader, self._writer = await asyncio.open_connection(self._host, self._port)
+
+    async def read_dcb(self):
+        """Reads neohub settings"""
+        self._dcb = await self.call({"READ_DCB": 100})
+
+    async def initial_zone_load(self):
+        self.devices = {}
+        zones = await self.get_zones()
+        for name in zones:
+            self.devices[name] = {"id": zones[name]}
+
+    async def call(self, j, expecting=None):
+        payload = bytearray(json.dumps(j) + "\0\r", "utf-8")
+        self._writer.write(payload)
+        await self._writer.drain()
+
+        response = ""
+        while True:
+            buf = (await self._reader.read(4096)).decode()
+            response += buf
+            if "\0" in response:
+                response = response.rstrip("\0")
+                break
+            if len(response) == 0:
+                break
+
+        # Got string back from hub, now decode json
+        jobj = json.loads(response)
+        # if no expected response, parse as JSON and return
+        if expecting is None:
+            return jobj
+        else:
+            # doing a simple ordered json compare, not just a string ==,
+            # because a neohub update could subtly change the response
+            # without breaking spec.
+            if json_compare(jobj, expecting):
+                return True
+            else:
+                logging.warning("Unexpected response from '%s'\nExpected: %s\nReceived: %s", json.dumps(j), repr(expecting), response)
+                return
 
     def neostats(self):
         return self._neostats
 
     def neoplugs(self):
         return self._neoplugs
-
-    def ensure_connected(self):
-        if self._connected:
-            return True
-
-        try:
-            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._sock.settimeout(10)
-            self._sock.connect((self._host, self._port))
-            # logging.info("socket connected")
-            self._connected = True
-        except socket.timeout:
-            logging.warn("socket timeout")
-            self._connected = False
-            self._sock.close()
-
-    def read_dcb(self):
-        """Reads neohub settings"""
-        self._dcb = self.call({"READ_DCB": 100})
     
     def corf(self):
         """Returns C or F, for celcius/farenheit"""
         return self._dcb["CORF"]
-
-    def initial_zone_load(self):
-        self.devices = {}
-        zones = self.get_zones()
-        for name in zones:
-            self.devices[name] = {"id": zones[name]}
-
-    def call(self, j, expecting=None):
-        self.ensure_connected()
-        self._sock.send(bytearray(json.dumps(j) + "\0\r", "utf-8"))
-        response = ""
-        # read everything that's available (we dont do pipelining for now)
-        while True:
-            try:
-                buf = self._sock.recv(4096)
-                if len(buf) == 0:
-                    break
-                response += str(buf, "utf-8")
-                if "\0" in response:
-                    response = response.rstrip("\0")
-                    break
-
-            except socket.timeout:
-                logging.warning("Error reading from socket")
-                break
-
-        # logging.debug("RECV: %s", response)
-        try:
-            jobj = json.loads(response)
-            # if no expected response, parse as JSON and return
-            if expecting is None:
-                return jobj
-            else:
-                # doing a simple ordered json compare, not just a string ==,
-                # because a neohub update could subtly change the response
-                # without breaking spec.
-                if json_compare(jobj, expecting):
-                    return True
-                else:
-                    logging.warning("Unexpected response from '%s'\nExpected: %s\nReceived: %s", json.dumps(j), repr(expecting), response)
-                    return
-
-        except json.JSONDecodeError:
-            logging.warning("JSON decode error: %s", response)
-            return None
-
 
     ## with expecting, we return true if all is ok.
     ## otherwise we should probably raise the specific error so it can be
@@ -104,11 +86,11 @@ class NeoHub(object):
     ##          or a list of device names, eg: ["Kitchen", "Bedroom 2"]
     ##          or a group name, eg: "First Floor"
 
-    def set_away_mode(self, device, onoff):
+    async def set_away_mode(self, device, onoff):
         if onoff:
-            return self.set_away_mode_on(device)
+            return await self.set_away_mode_on(device)
         else:
-            return self.set_away_mode_off(device)
+            return await self.set_away_mode_off(device)
 
     # AWAY_ON
     # Possible results
@@ -116,9 +98,9 @@ class NeoHub(object):
     # {"error":"Could not complete away on"}
     # {"error":"Invalid argument to AWAY_OFF, should be a valid device or
     #           array of valid devices"}
-    def set_away_mode_on(self, device):
+    async def set_away_mode_on(self, device):
         q = {"AWAY_ON": device}
-        return self.call(q, expecting={"result": "away on"})
+        return await self.call(q, expecting={"result": "away on"})
 
     # AWAY_OFF
     # Possible results
@@ -126,9 +108,9 @@ class NeoHub(object):
     # {"error":"Could not complete away off"}
     # {"error":"Invalid argument to AWAY_OFF, should be a valid device or
     #           array of valid devices"}
-    def set_away_mode_off(self, device):
+    async def set_away_mode_off(self, device):
         q = {"AWAY_OFF": device}
-        return self.call(q, expecting={"result": "away off"})
+        return await self.call(q, expecting={"result": "away off"})
 
     # BOOST_OFF
     # {"BOOST_OFF":[{"hours":0,"minutes":10},<devices>]}
@@ -139,9 +121,9 @@ class NeoHub(object):
     # {"error":"Invalid first argument to BOOST_OFF, should be object"}
     # {"error":"Invalid second argument to BOOST_OFF, should be a valid
     # device or array of valid devices"}
-    def boost_off(self, device, interval):
+    async def boost_off(self, device, interval):
         q = {"BOOST_OFF": [interval, device]}
-        return self.call(q, expecting={"result": "boost off"})
+        return await self.call(q, expecting={"result": "boost off"})
 
     # BOOST_ON
     # {"BOOST_OFF":[{"hours":0,"minutes":10},<devices>]]}
@@ -152,9 +134,9 @@ class NeoHub(object):
     # {"error":"Invalid first argument to BOOST_ON, should be object"}
     # {"error":"Invalid second argument to BOOST_ON, should be a valid
     # device or array of valid devices"}
-    def boost_on(self, device, interval):
+    async def boost_on(self, device, interval):
         q = {"BOOST_ON": [interval, device]}
-        return self.call(q, expecting={"result": "boost on"})
+        return await self.call(q, expecting={"result": "boost on"})
 
     # FROST_OFF
     # {"FROST_OFF":<device(s)>}
@@ -163,9 +145,9 @@ class NeoHub(object):
     # {"error":"Could not complete frost off"}
     # {"error":"Invalid argument to FROST_OFF, should be a valid device or
     # array of valid devices"}
-    def frost_off(self, device):
+    async def frost_off(self, device):
         q = {"FROST_OFF": device}
-        return self.call(q, expecting={"result": "frost off"})
+        return await self.call(q, expecting={"result": "frost off"})
 
     # FROST_ON
     # {"FROST_ON":<device(s)>}
@@ -174,9 +156,9 @@ class NeoHub(object):
     # {"error":"Could not complete frost on"}
     # {"error":"Invalid argument to FROST_ON, should be a valid device or
     # array of valid devices"}
-    def frost_on(self, device):
+    async def frost_on(self, device):
         q = {"FROST_ON": device}
-        return self.call(q, expecting={"result": "frost on"})
+        return await self.call(q, expecting={"result": "frost on"})
 
     # SET_FROST - aka set minimum temp
     # {"SET_FROST":[<temp>, <device(s)>]}
@@ -187,9 +169,9 @@ class NeoHub(object):
     # {"error":"Invalid first argument to SET_FROST, should be integer"}
     # {"error":"Invalid second argument to SET_FROST, should be a valid
     # device or array of valid devices"}
-    def set_frost(self, device, temp):
+    async def set_frost(self, device, temp):
         q = {"SET_FROST": [int(temp), device]}
-        return self.call(q, expecting={"result": "temperature was set"})
+        return await self.call(q, expecting={"result": "temperature was set"})
 
     # SET_PREHEAT
     # {"SET_PREHEAT":[<temp>, <device(s)>]}
@@ -200,9 +182,9 @@ class NeoHub(object):
     # {"error":"Invalid first argument to SET_PREHEAT, should be integer"}
     # {"error":"Invalid second argument to SET_PREHEAT, should be a valid
     # device or array of valid devices"}
-    def set_preheat(self, device, temp):
+    async def set_preheat(self, device, temp):
         q = {"SET_PREHEAT": [int(temp), device]}
-        return self.call(q, expecting={"result": "max preheat was set"})
+        return await self.call(q, expecting={"result": "max preheat was set"})
 
     # SET_TEMP
     # {"SET_TEMP":[<temp>, <device(s)>]}
@@ -214,9 +196,9 @@ class NeoHub(object):
     # float"}
     # {"error":"Invalid second argument to SET_TEMP, should be a valid
     # device or array of valid devices"}
-    def set_temp(self, device, temp):
+    async def set_temp(self, device, temp):
         q = {"SET_TEMP": [int(temp), device]}
-        return self.call(q, expecting={"result": "temperature was set"})
+        return await self.call(q, expecting={"result": "temperature was set"})
 
     # CREATE_GROUP
     # {"CREATE_GROUP":[[<devices>], <name>]}
@@ -229,9 +211,9 @@ class NeoHub(object):
     # devices"}
     # {"error":"second argument to CREATE_GROUP should be a string (group
     # name)"}
-    def create_group(self, device, name):
+    async def create_group(self, device, name):
         q = {"CREATE_GROUP": [[device], str(name)]}
-        return self.call(q, expecting={"result": "group created"})
+        return await self.call(q, expecting={"result": "group created"})
 
     # DELETE_GROUP
     # {"DELETE_GROUP":<group>}
@@ -245,9 +227,9 @@ class NeoHub(object):
     # Possible results
     # {"<groupname1>":["<devicename1>", "<devicename2>", <etc>],
     # "<groupname2>":[<members>], <etc>}
-    def delete_group(self, name):
+    async def delete_group(self, name):
         q = {"DELETE_GROUP": str(name)}
-        return self.call(q, expecting={"result": "group removed"})
+        return await self.call(q, expecting={"result": "group removed"})
 
     # ZONE_TITLE
     # {"ZONE_TITLE":[<oldname>, <newname>]}
@@ -258,13 +240,13 @@ class NeoHub(object):
     # {"error":"first argument to ZONE_TITLE should be a device"}
     # {"error":"second argument to ZONE_TITLE should be a string (new
     # device name)"}
-    def zone_title(self, oldname, newname):
+    async def zone_title(self, oldname, newname):
         q = {"ZONE_TITLE": [str(oldname), str(newname)]}
-        return self.call(q, expecting={"result": "zone renamed"})
+        return await self.call(q, expecting={"result": "zone renamed"})
 
-    def firmware_version(self):
+    async def firmware_version(self):
         q = {"FIRMWARE": 0}
-        ret = self.call(q)
+        ret = await self.call(q)
         return ret["firmware version"]
 
 
@@ -275,9 +257,9 @@ class NeoHub(object):
     # as day1>, "today":<todays values>}
     # {"error":"Invalid argument to GET_TEMPLOG, should be a valid device
     # or array of valid devices"}
-    def get_templog(self, device):
+    async def get_templog(self, device):
         q = {"GET_TEMPLOG": device}
-        return self.call(q)
+        return await self.call(q)
 
     # GET_ZONES
     # Possible results
@@ -285,18 +267,18 @@ class NeoHub(object):
     # references and can be ignored, they will work as alternative for the
     # device names
     # {}
-    def get_zones(self):
+    async def get_zones(self):
         q = {"GET_ZONES": 0}
-        return self.call(q)
+        return await self.call(q)
 
     # REMOVE_ZONE
     # {"REMOVE_ZONE":<zone>}
     # Possible results
     # {"result":"zone removed"}
     # {"error":"Invalid argument to REMOVE_ZONE, should be a valid device or array of valid devices"}
-    def remove_zone(self, device):
+    async def remove_zone(self, device):
         q = {"REMOVE_ZONE": device}
-        return self.call(q, expecting={"result": "zone removed"})
+        return await self.call(q, expecting={"result": "zone removed"})
 
     # Note1
     # Neoplug is seen primarily as a timeclock by the system with a few additional commands for manual
@@ -323,30 +305,29 @@ class NeoHub(object):
     # {"error":"Could not complete manual off"}
     # {"error":"Invalid argument to MANUAL_OFF, should be a valid device
     # or array of valid devices"}
-    def switch_plug_on(self, device):
+    async def switch_plug_on(self, device):
         q = {"TIMER_ON": device}
-        return self.call(q, expecting={"result": "time clock overide on"})
+        return await self.call(q, expecting={"result": "time clock overide on"})
 
-    def switch_plug_off(self, device):
+    async def switch_plug_off(self, device):
         q = {"TIMER_OFF": device}
-        return self.call(q, expecting={"result": "timers off"})
+        return await self.call(q, expecting={"result": "timers off"})
 
     # Merge together INFO and ENGINEERS_DATA for each device
     # and augment with some derived field names, in lower-case
     # since various things are inconsistently named
-    def update(self, force_update=False):
+    async def update(self, force_update=False):
         if (self._last_update_time is None or force_update or (time.time() - self._last_update_time) >= 15):
             self._last_update_time = time.time()
             logging.warn("actual neo")
-            return self.actual_update()
+            return await self.actual_update()
         else:
             logging.warn("cached neo")
             return self.devices
 
-    def actual_update(self):
-        self.ensure_connected()
-        resp = self.call({"INFO": "0"})
-        resp2 = self.call({"ENGINEERS_DATA": "0"}) 
+    async def actual_update(self):
+        resp = await self.call({"INFO": "0"})
+        resp2 = await self.call({"ENGINEERS_DATA": "0"}) 
         for dev in resp["devices"]:
             name = dev["device"]
             merged = dev.copy()

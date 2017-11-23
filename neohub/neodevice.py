@@ -1,3 +1,6 @@
+import asyncio
+
+
 class NeoDevice(object):
     """One neodevice superclass"""
     def __init__(self, hub, name):
@@ -5,8 +8,8 @@ class NeoDevice(object):
         self.name = name
         #self.id = hub.devices[name]["id"]
 
-    def update(self):
-        self.hub.update()
+    async def update(self):
+        await self.hub.update()
 
     def __getitem__(self, key):
         return self.hub.devices[self.name][key]

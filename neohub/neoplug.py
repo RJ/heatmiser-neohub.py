@@ -1,3 +1,4 @@
+import asyncio
 from .neodevice import NeoDevice
 
 
@@ -11,16 +12,16 @@ class NeoPlug(NeoDevice):
     def is_on(self):
         return self["TIME_CLOCK_OVERIDE_BIT"] and self["TIMER"]
 
-    def switch_on(self):
-        if self.hub.switch_plug_on(self.name):
+    async def switch_on(self):
+        if await self.hub.switch_plug_on(self.name):
           self["TIME_CLOCK_OVERIDE_BIT"] = True
           self["TIMER"] = True
           return True
         else:
           return False
 
-    def switch_off(self):
-        if self.hub.switch_plug_off(self.name):
+    async def switch_off(self):
+        if await self.hub.switch_plug_off(self.name):
           self["TIME_CLOCK_OVERIDE_BIT"] = False
           self["TIMER"] = False
           return True

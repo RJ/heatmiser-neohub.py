@@ -1,3 +1,4 @@
+import asyncio
 from .neodevice import NeoDevice
 
 
@@ -14,7 +15,7 @@ class NeoStat(NeoDevice):
     self, rather than do another INFO/ENGINEERS_DATA query to the hub.
     """
     def __repr__(self):
-        return "<NeoStat id=%-2d temp=%0.1f name='%s'>" % (self['id'], self.current_temperature(), self.name)
+        return "<NeoStat id=%-2d temp=%0.1f frost=%s name='%s'>" % (self['id'], self.current_temperature(), self.is_frosted(), self.name)
 
     def current_temperature(self):
         """Gets current temperature as measured at the thermostat"""
@@ -32,25 +33,25 @@ class NeoStat(NeoDevice):
         """returns the frost temperature, regardless of if frost mode is on"""
         return self["FROST TEMPERATURE"]
 
-    def set_frost_temperature(self, temp):
+    async def set_frost_temperature(self, temp):
         """sets the frost (minimum allowable) temperature"""
-        if self.hub.set_frost(self.name, temp):
+        if await self.hub.set_frost(self.name, temp):
             self["FROST TEMPERATURE"] = temp
             return True
         else:
             return False
 
-    def set_frost_on(self):
+    async def set_frost_on(self):
         """enable frost mode"""
-        if self.hub.frost_on(self.name):
+        if await self.hub.frost_on(self.name):
             self["STANDBY"] = True
             return True
         else:
             return False
 
-    def set_frost_off(self):
+    async def set_frost_off(self):
         """disable frost mode"""
-        if self.hub.frost_off(self.name):
+        if await self.hub.frost_off(self.name):
             self["STANDBY"] = False
             return True
         else:
@@ -81,12 +82,12 @@ class NeoStat(NeoDevice):
         """
         return float(self["CURRENT_SET_TEMPERATURE"])
 
-    def set_set_temperature(self, temp):
+    async def set_set_temperature(self, temp):
         """Sets the so-called SET_TEMPERATURE
 
         This temperature is maintained only until the next programmed comfort
         level. At this time, the thermostat will revert back to the programmed
         levels
         """
-        if self.hub.set_temp(self.name, temp):
+        if await self.hub.set_temp(self.name, temp):
             self["CURRENT_SET_TEMPERATURE"] = temp
