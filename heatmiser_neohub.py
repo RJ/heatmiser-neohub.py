@@ -38,18 +38,20 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_PORT): cv.port,
 })
 
-@asyncio.coroutine
-def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
+async def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     """ Query neohub, create a hass ClimateDevice for each """
     host = config.get(CONF_HOST, "10.0.0.197")
     port = config.get("CONF_PORT", 4242)
     hub = NeoHub(host, port)
     await hub.async_setup()
 
-    neoplugs = [NeoPlugSwitch(neoplugs[name], None, False) for name in hub.neoplugs()]
-    neostats = [NeoStatDevice(neostats[name]) for name in hub.neostats()]
+    plugs = hub.neoplugs()
+    stats = hub.neostats()
+    neoplugs = [NeoPlugSwitch(plugs[name], None, False) for name in plugs]
+    neostats = [NeoStatDevice(stats[name]) for name in stats]
     async_add_devices(neoplugs)
     async_add_devices(neostats)
+    _LOGGER.info("Added %s plugs, %s stats" % (len(plugs), len(stats)))
 
 
 class NeoStatDevice(ClimateDevice):
@@ -99,18 +101,30 @@ class NeoStatDevice(ClimateDevice):
         """ Returns if away mode is on. """
         return self._neo.is_frosted()
 
+    def update_after(self, secs):
+        async def wait_and_update():
+            await asyncio.sleep(secs)
+            _LOGGER.info("updating after delay of %s" % (secs))
+            await self.async_update()
+            #self.async_schedule_update_ha_state()
+
+        asyncio.ensure_future(wait_and_update())
+
     async def async_set_temperature(self, **kwargs):
         """ Set new target temperature. """
         new_temp = int(kwargs.get(ATTR_TEMPERATURE))
         await self._neo.set_set_temperature(new_temp)
+        self.update_after(1.5)
 
     async def async_turn_away_mode_on(self):
         """ Turns away mode on. """
         await self._neo.set_frost_on()
+        self.update_after(1.5)
 
     async def async_turn_away_mode_off(self):
         """ Turns away mode off. """
         await self._neo.set_frost_off()
+        self.update_after(1.5)
 
     async def async_update(self):
         await self._neo.update()
@@ -153,11 +167,22 @@ class NeoPlugSwitch(SwitchDevice):
     async def async_turn_on(self, **kwargs):
         self._state = True
         await self._neo.switch_on()
-        self.schedule_update_ha_state()
+        self.update_after(1.5)
+        #await self.async_schedule_update_ha_state()
 
     async def async_turn_off(self, **kwargs):
         """Turn the device off."""
         self._state = False
         await self._neo.switch_off()
-        self.schedule_update_ha_state()
+        self.update_after(1.5)
+        #await self.async_schedule_update_ha_state()
+
+    def update_after(self, secs):
+        async def wait_and_update():
+            await asyncio.sleep(secs)
+            _LOGGER.info("updating after delay of %s" % (secs))
+            await self.async_update()
+            #self.async_schedule_update_ha_state()
+
+        asyncio.ensure_future(wait_and_update())
 

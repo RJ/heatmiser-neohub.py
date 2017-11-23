@@ -9,7 +9,8 @@ from .neoplug import NeoPlug
 
 class NeoHub(object):
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, cache_duration=15):
+        self._cache_duration = cache_duration or 15
         self._host = host
         self._port = port
         self._sock = None
@@ -18,6 +19,7 @@ class NeoHub(object):
         self._neoplugs = {}
         self._connected = False
         self._last_update_time = 0
+        self._dirty = False
 
     async def async_setup(self):
         await self.connect_to_hub()
@@ -52,6 +54,8 @@ class NeoHub(object):
                 break
             if len(response) == 0:
                 break
+
+        self._dirty = True
 
         # Got string back from hub, now decode json
         jobj = json.loads(response)
@@ -313,18 +317,20 @@ class NeoHub(object):
         q = {"TIMER_OFF": device}
         return await self.call(q, expecting={"result": "timers off"})
 
+    # Guard / memoize / debounce access to actual_update()
+    async def update(self, force_update=False):
+        if (self._dirty or self._last_update_time is None or force_update or (time.time() - self._last_update_time) >= self._cache_duration):
+            self._last_update_time = time.time()
+            logging.debug("Querying NeoHub for all device data")
+            self._dirty = False
+            return await self.actual_update()
+        else:
+            #logging.debug("(cached)")
+            return self.devices
+
     # Merge together INFO and ENGINEERS_DATA for each device
     # and augment with some derived field names, in lower-case
     # since various things are inconsistently named
-    async def update(self, force_update=False):
-        if (self._last_update_time is None or force_update or (time.time() - self._last_update_time) >= 15):
-            self._last_update_time = time.time()
-            logging.warn("actual neo")
-            return await self.actual_update()
-        else:
-            logging.warn("cached neo")
-            return self.devices
-
     async def actual_update(self):
         resp = await self.call({"INFO": "0"})
         resp2 = await self.call({"ENGINEERS_DATA": "0"}) 
