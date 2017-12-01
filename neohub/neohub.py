@@ -337,8 +337,8 @@ class NeoHub(object):
     # since various things are inconsistently named
     async def actual_update(self):
         self._update_in_progress = True
-        resp = await self.call({"INFO": "0"})
-        resp2 = await self.call({"ENGINEERS_DATA": "0"}) 
+        resp = await self.call({"INFO": 0})
+        resp2 = await self.call({"ENGINEERS_DATA": 0})
         for dev in resp["devices"]:
             name = dev["device"]
             merged = dev.copy()
