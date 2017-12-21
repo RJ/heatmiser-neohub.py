@@ -83,7 +83,7 @@ async def main(neo, cmd, args):
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
-    neo = NeoHub("10.0.0.197", 4242)
+    neo = NeoHub("192.168.13.94", 4242)
     # print(neo.set_temperature("Kitchen", 22))
     cmd = sys.argv[1]
     args = sys.argv[2:]
