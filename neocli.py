@@ -27,14 +27,14 @@ async def main(neo, cmd, args):
         return 0
 
     if cmd == "stat":
-        print(json.dumps(await neo.update()[args[0]], sort_keys=True, indent=2))
+        print(json.dumps((await neo.update())[args[0]], sort_keys=True, indent=2))
         return 0
 
     if cmd == "switch_on":
-        return await neo.neoplugs()[args[0]].switch_on()
+        return (await neo.neoplugs())[args[0]].switch_on()
 
     if cmd == "switch_off":
-        return await neo.neoplugs()[args[0]].switch_off()
+        return (await neo.neoplugs())[args[0]].switch_off()
 
     if cmd == "script":
         p = neo.neoplugs()["F1 Hall Plug"]
