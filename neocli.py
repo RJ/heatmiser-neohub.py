@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import socket
+import os
 from neohub import NeoHub, NeoDevice
 
 
@@ -82,14 +83,19 @@ async def main(neo, cmd, args):
 
 
 if __name__ == '__main__':
+    host = os.environ.get("NEOHUB_IP")
+    if host is None:
+        print("Please set the NEOHUB_IP environment variable")
+        print("eg: NEOHUB_IP=\"192.168.0.123\" %s ..." % sys.argv[0])
+        sys.exit(1)
+
     loop = asyncio.get_event_loop()
-    neo = NeoHub("192.168.13.94", 4242)
-    # print(neo.set_temperature("Kitchen", 22))
+    neo = NeoHub(host, 4242)
+
     cmd = sys.argv[1]
     args = sys.argv[2:]
     retval = loop.run_until_complete(main(neo, cmd, args))
     loop.close()
     sys.exit(retval)
-    
 
 

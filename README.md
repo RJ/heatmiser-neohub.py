@@ -21,6 +21,7 @@ and many distributions are already using it anyway.
 
 ### Example CLI Usage
 
+    $ export NEOHUB_IP="192.168.0.123"
     $ ./neocli.py list
 
     <NeoStat id=1  temp=20.8 name='Bedroom'>
