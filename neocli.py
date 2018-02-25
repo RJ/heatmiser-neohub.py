@@ -30,6 +30,9 @@ async def main(neo, cmd, args):
         print(json.dumps((await neo.update())[args[0]], sort_keys=True, indent=2))
         return 0
 
+    if cmd == "set_diff":
+        return ok(await neo.set_diff(args[0], args[1]))
+
     if cmd == "switch_on":
         return (await neo.neoplugs())[args[0]].switch_on()
 
@@ -70,6 +73,11 @@ async def main(neo, cmd, args):
         for name in neo.neostats():
             ns = neo.neostats()[name]
             print(repr(ns))
+        return 0
+
+    if cmd == "stat-names":
+        for name in neo.neostats():
+            print(name)
         return 0
 
     if cmd == "list-plugs":

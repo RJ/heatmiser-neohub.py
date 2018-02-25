@@ -178,6 +178,10 @@ class NeoHub(object):
         q = {"SET_FROST": [int(temp), device]}
         return await self.call(q, expecting={"result": "temperature was set"})
 
+    async def set_diff(self, device, dtemp):
+        q = {"SET_DIFF":[int(dtemp), device]}
+        return await self.call(q, expecting={"result": "switching differential was set"})
+
     # SET_PREHEAT
     # {"SET_PREHEAT":[<temp>, <device(s)>]}
     # Possible results
