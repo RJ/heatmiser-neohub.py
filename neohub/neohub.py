@@ -117,6 +117,21 @@ class NeoHub(object):
         q = {"AWAY_OFF": device}
         return await self.call(q, expecting={"result": "away off"})
 
+    # SET_FORMAT
+    # {"SET_FORMAT":<format>}
+    # format is a string, "NONPROGRAMMABLE", "7DAY", "5DAY/2DAY", or "24HOURSFIXED"
+    # Possible results
+    # {"result":"Format was set"}
+    # {"error":"setting format failed"}
+    # {"error":"Invalid argument to SET_FORMAT, should be string"} {"error":"Invalid argument to SET_FORMAT, unknown format (7DAY|5DAY/2DAY|24HOURSFIXED|NONPROGRAMMABLE"}
+    async def set_program_mode(self, mode):
+        options = ["NONPROGRAMMABLE", "7DAY", "5DAY/2DAY", "24HOURSFIXED"]
+        if not any(mode in s for s in options):
+            raise ValueError("Mode must be one of: %s" % repr(options))
+        q = {"SET_FORMAT": mode}
+        return await self.call(q, expecting={"result": "Format was set"})
+
+
     # BOOST_OFF
     # {"BOOST_OFF":[{"hours":0,"minutes":10},<devices>]}
     # Possible results

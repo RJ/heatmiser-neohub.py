@@ -59,6 +59,9 @@ async def main(neo, cmd, args):
     if cmd == "frost_off":
         return ok(await neo.frost_off(args[0]))
 
+    if cmd == "set_program_mode":
+        return ok(await neo.set_program_mode(args[0]))
+
     if cmd == "list":
         for name in neo.neostats():
             ns = neo.neostats()[name]
