@@ -34,10 +34,10 @@ async def main(neo, cmd, args):
         return ok(await neo.set_diff(args[0], args[1]))
 
     if cmd == "switch_on":
-        return (await neo.neoplugs())[args[0]].switch_on()
+        return (await neo.neoplugs()[args[0]].switch_on())
 
     if cmd == "switch_off":
-        return (await neo.neoplugs())[args[0]].switch_off()
+        return (await neo.neoplugs()[args[0]].switch_off())
 
     if cmd == "script":
         p = neo.neoplugs()["F1 Hall Plug"]
