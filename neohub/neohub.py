@@ -364,12 +364,12 @@ class NeoHub(object):
             merged.update(resp2[name])
             self.devices[name].update(merged)
 
-            # device type 1 = neostat
-            #             6 = neoplug
+            # device type 1, 12 = neostat
+            #             6     = neoplug
             if merged["DEVICE_TYPE"] == 0:
                 # offline therm?
                 pass
-            elif merged["DEVICE_TYPE"] == 1:
+            elif merged["DEVICE_TYPE"] in [1, 12]:
                 if name not in self._neostats:
                     self._neostats[name] = NeoStat(self, name)
             elif merged["DEVICE_TYPE"] == 6:
