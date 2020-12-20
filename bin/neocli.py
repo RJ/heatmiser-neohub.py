@@ -6,7 +6,7 @@ import json
 import logging
 import socket
 import os
-from neohub import NeoHub, NeoDevice
+from heatmiser_neohub import NeoHub, NeoDevice
 
 
 logging.basicConfig(level=logging.DEBUG)

@@ -3,6 +3,10 @@ homeassistant.components.thermostat.heatmiser_neohub
 ----------------------------------------------------
 
 Talks to neohub, controls neostat zigbee thermostats and neoplugs
+
+
+OLD - hass component separate now, this just pypy lib, per hass guidelines
+
 """
 import asyncio
 import logging
