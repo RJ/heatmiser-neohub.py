@@ -78,7 +78,7 @@ class NeoHub(object):
 
     def neoplugs(self):
         return self._neoplugs
-    
+
     def corf(self):
         """Returns C or F, for celcius/farenheit"""
         return self._dcb["CORF"]
@@ -86,7 +86,7 @@ class NeoHub(object):
     ## with expecting, we return true if all is ok.
     ## otherwise we should probably raise the specific error so it can be
     ## sent to the UI. (TODO)
-    
+
     ## "device" can be a single device name, or list thereof, eg: "Kitchen"
     ##          or a list of device names, eg: ["Kitchen", "Bedroom 2"]
     ##          or a group name, eg: "First Floor"
@@ -369,7 +369,7 @@ class NeoHub(object):
             if merged["DEVICE_TYPE"] == 0:
                 # offline therm?
                 pass
-            elif merged["DEVICE_TYPE"] == 1:
+            elif merged["DEVICE_TYPE"] == 1 or merged["DEVICE_TYPE"] == 11:
                 if name not in self._neostats:
                     self._neostats[name] = NeoStat(self, name)
             elif merged["DEVICE_TYPE"] == 6:
@@ -377,7 +377,7 @@ class NeoHub(object):
                     self._neoplugs[name] = NeoPlug(self, name)
             else:
                 logging.warn("Unimplemented NeoSomething device_type(%s)! "
-                             "Only support neostat(1) and neoplug(6) at the mo" % (merged["DEVICE_TYPE"]))
+                             "Only support neostat(1), neostat(11) and neoplug(6) at the mo" % (merged["DEVICE_TYPE"]))
                 print(repr(merged))
                 pass
 
