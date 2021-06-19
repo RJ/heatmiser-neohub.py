@@ -2,3 +2,7 @@
 *.pyc
 __pycache__
 *.swp
+
+# PyCharm exclusions
+venv/
+.idea/
