@@ -221,7 +221,22 @@ class NeoHub(object):
     # {"error":"Invalid second argument to SET_TEMP, should be a valid
     # device or array of valid devices"}
     async def set_temp(self, device, temp):
-        q = {"SET_TEMP": [int(temp), device]}
+        q = {"SET_TEMP": [int(temp), int(device)]}
+        return await self.call(q, expecting={"result": "temperature was set"})
+
+    # SET_COOL_TEMP
+    # {"SET_COOL_TEMP":[<temp>, <device(s)>]}
+    # Only supported on devices that handle cooling and heating mode
+    # Possible results
+    # {"result":"temperature was set"}
+    # {"error":"setting temperature failed"}
+    # {"error":"SET_COOL_TEMP arguments not in an array"}
+    # {"error":"Invalid first argument to SET_COOL_TEMP, should be integer or
+    # float"}
+    # {"error":"Invalid second argument to SET_COOL_TEMP, should be a valid
+    # device or array of valid devices"}
+    async def set_cool_temp(self, device, temp):
+        q = {"SET_COOL_TEMP": [int(temp), int(device)]}
         return await self.call(q, expecting={"result": "temperature was set"})
 
     # CREATE_GROUP
