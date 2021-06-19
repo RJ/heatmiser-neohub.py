@@ -78,7 +78,7 @@ class NeoHub(object):
 
     def neoplugs(self):
         return self._neoplugs
-    
+
     def corf(self):
         """Returns C or F, for celcius/farenheit"""
         return self._dcb["CORF"]
@@ -86,7 +86,7 @@ class NeoHub(object):
     ## with expecting, we return true if all is ok.
     ## otherwise we should probably raise the specific error so it can be
     ## sent to the UI. (TODO)
-    
+
     ## "device" can be a single device name, or list thereof, eg: "Kitchen"
     ##          or a list of device names, eg: ["Kitchen", "Bedroom 2"]
     ##          or a group name, eg: "First Floor"
@@ -221,7 +221,22 @@ class NeoHub(object):
     # {"error":"Invalid second argument to SET_TEMP, should be a valid
     # device or array of valid devices"}
     async def set_temp(self, device, temp):
-        q = {"SET_TEMP": [int(temp), device]}
+        q = {"SET_TEMP": [int(temp), int(device)]}
+        return await self.call(q, expecting={"result": "temperature was set"})
+
+    # SET_COOL_TEMP
+    # {"SET_COOL_TEMP":[<temp>, <device(s)>]}
+    # Only supported on devices that handle cooling and heating mode
+    # Possible results
+    # {"result":"temperature was set"}
+    # {"error":"setting temperature failed"}
+    # {"error":"SET_COOL_TEMP arguments not in an array"}
+    # {"error":"Invalid first argument to SET_COOL_TEMP, should be integer or
+    # float"}
+    # {"error":"Invalid second argument to SET_COOL_TEMP, should be a valid
+    # device or array of valid devices"}
+    async def set_cool_temp(self, device, temp):
+        q = {"SET_COOL_TEMP": [int(temp), int(device)]}
         return await self.call(q, expecting={"result": "temperature was set"})
 
     # CREATE_GROUP
@@ -369,7 +384,7 @@ class NeoHub(object):
             if merged["DEVICE_TYPE"] == 0:
                 # offline therm?
                 pass
-            elif merged["DEVICE_TYPE"] in [1, 12]:
+            elif merged["DEVICE_TYPE"] in [1, 11, 12]:
                 if name not in self._neostats:
                     self._neostats[name] = NeoStat(self, name)
             elif merged["DEVICE_TYPE"] == 6:
@@ -377,7 +392,7 @@ class NeoHub(object):
                     self._neoplugs[name] = NeoPlug(self, name)
             else:
                 logging.warn("Unimplemented NeoSomething device_type(%s)! "
-                             "Only support neostat(1) and neoplug(6) at the mo" % (merged["DEVICE_TYPE"]))
+                             "Only support neostat(1), neostat(11) and neoplug(6) at the mo" % (merged["DEVICE_TYPE"]))
                 print(repr(merged))
                 pass
 
