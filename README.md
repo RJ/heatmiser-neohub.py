@@ -55,3 +55,11 @@ and in `configuration.yaml`:
       port: 4242
       debug: True
 
+## Troubleshooting
+### Connection Refused
+This API uses the Legacy API over port 4242.
+
+To use this functionality, you  will need to enable Legacy API access for your NeoHub. 
+To do this, log into the app > Settings > API Access > Legacy API Enable.
+Your NeoHub will now listen to port 4242.
+
