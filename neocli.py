@@ -53,6 +53,14 @@ async def main(neo, cmd, args):
     if cmd == "remove_zone":
         return ok(await neo.remove_zone(args[0]))
 
+    # pass 4 digits as PIN
+    if cmd == "lock":
+        pin_str = args[1]
+        return ok(await neo.set_locked(args[0], pin_str))
+
+    if cmd == "unlock":
+        return ok(await neo.set_unlocked(args[0]))
+
     if cmd == "frost_on":
         return ok(await neo.frost_on(args[0]))
 

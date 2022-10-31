@@ -97,6 +97,35 @@ class NeoHub(object):
         else:
             return await self.set_away_mode_off(device)
 
+    # UNLOCK
+    # {"UNLOCK":<device(s)>}
+    # Possible results
+    # {"result":"unlocked"}
+    # {"error":"unlock failed"}
+    # {"error":"Invalid argument to UNLOCK, should be a valid device or
+    # array of valid devices"}
+    async def set_unlocked(self, device):
+        q = {"UNLOCK": device}
+        return await self.call(q, expecting={"result": "unlocked"})
+
+    # LOCK
+    # {"LOCK":[[<pin1>,<pin2>,<pin3>,<pin4>], <device(s)>]}
+    # Possible results
+    # {"result":"locked"}
+    # {"error":"lock failed1"} (setting pin failed)
+    # {"error":"lock failed2"} (pin was set but locking failed)
+    # {"error":"LOCK arguments not in an array"}
+    # {"error":"LOCK first (pin) argument not in an array"}
+    # {"error":"Invalid argument to LOCK, should be array of 4 integers
+    # (0-9)"}
+    # {"error":"Invalid second argument to LOCK, should be a valid device
+    # or array of valid devices"}
+    async def set_locked(self, device, pin_str):
+        # split 4 digits of string pin into list of ints
+        pin = list(map(int, pin_str))
+        q = {"LOCK": [pin, device]}
+        return await self.call(q, expecting={"result": "locked"})
+
     # AWAY_ON
     # Possible results
     # {"result":"away on"}

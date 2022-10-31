@@ -82,6 +82,14 @@ class NeoStat(NeoDevice):
         """
         return float(self["CURRENT_SET_TEMPERATURE"])
 
+    """unlocks a locked stat"""
+    async def set_unlocked(self):
+        return await self.hub.set_unlocked(self.name)
+
+    """lock a stat - must be 4 digit str pin"""
+    async def set_locked(self, pin_str):
+        return await self.hub.set_unlocked(self.name, pin_str)
+
     async def set_set_temperature(self, temp):
         """Sets the so-called SET_TEMPERATURE
 
